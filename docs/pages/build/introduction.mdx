@@ -1,60 +1,212 @@
----
-title: EAS Build
-sidebar_title: Introduction
-hideTOC: true
-description: EAS Build is a hosted service for building app binaries for your Expo and React Native projects.
----
+import React, { useState, useMemo } from 'react';
+import { View, Text, TextInput, TouchableOpacity, FlatList, ScrollView, StyleSheet } from 'react-native';
+import { AntDesign, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 
-import { Cube01Icon } from '@expo/styleguide-icons/outline/Cube01Icon';
+const APP_TITLE = 'محطة مكلان للغاز المسال';
+const FIXED_PRICE_PER_UNIT = 500; // سعر الوحدة
+const CURRENCY_NAME = 'ريال يمني';
 
-import { BoxLink } from '~/ui/components/BoxLink';
+const TRANSACTION_TYPES = {
+  SALE: 'بيع',
+  EXPENSE: 'مصروف',
+};
 
-**EAS Build** is a hosted service for building app binaries for your Expo and React Native projects.
+export default function App() {
+  const [transactions, setTransactions] = useState([]);
 
-It makes building your apps for distribution simple and easy to automate by providing defaults that work well for Expo and React Native projects out of the box, and by handling your app signing credentials for you (if you wish). It also makes sharing builds with your team easier than ever with [internal distribution](/build/internal-distribution/) (using ad hoc and/or enterprise "universal" provisioning), deeply integrates with EAS Submit for app store submissions, and has first-class support for the [`expo-updates`](/build/updates/) library.
+  // Sale form
+  const [morningReading, setMorningReading] = useState('');
+  const [eveningReading, setEveningReading] = useState('');
+  const [saleDate, setSaleDate] = useState(new Date().toISOString().substring(0, 10));
 
-It's designed to work for any native project, whether or not you use Expo and React Native. It's the fastest way to get from `npx create-expo-app` or `npx @react-native-community/cli@latest init` to app stores.
+  // Expense form
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDescription, setExpenseDescription] = useState('');
 
-### Get started
+  const [modalType, setModalType] = useState(TRANSACTION_TYPES.SALE);
+  const [formError, setFormError] = useState('');
 
-<BoxLink
-  title="Create your first build"
-  description="It should only take a few minutes in total to get up and running for iOS and/or Android."
-  href="/build/setup"
-  Icon={Cube01Icon}
-/>
+  const quantitySold = useMemo(() => {
+    const m = parseFloat(morningReading);
+    const e = parseFloat(eveningReading);
+    if (isNaN(m) || isNaN(e) || e < m) return 0;
+    return parseFloat((e - m).toFixed(2));
+  }, [morningReading, eveningReading]);
 
-<BoxLink
-  title="Share your apps with internal testers"
-  description="EAS Build can help share preview builds of your app with a single URL."
-  href="/build/internal-distribution"
-  Icon={Cube01Icon}
-/>
+  const totalAmount = useMemo(() => quantitySold * FIXED_PRICE_PER_UNIT, [quantitySold]);
 
-<BoxLink
-  title="Automate submissions"
-  description="Learn how you can have the service take your successful builds and handle uploading them to app stores for you automatically."
-  href="/build/automate-submissions"
-  Icon={Cube01Icon}
-/>
+  const totalBalance = useMemo(
+    () => transactions.reduce((sum, t) => sum + (t.amount || 0), 0),
+    [transactions]
+  );
 
-<BoxLink
-  title="App version management"
-  description="Automate version bumps so you never have to think about them again."
-  href="/build-reference/app-versions"
-  Icon={Cube01Icon}
-/>
+  const handleAddTransaction = () => {
+    setFormError('');
 
-<BoxLink
-  title="Run builds locally or on your own infrastructure"
-  description="EAS Build is a hosted service, but you can also run it on your own machine, for example, to debug or to comply with any company security policies."
-  href="/build-reference/local-builds"
-  Icon={Cube01Icon}
-/>
+    if (modalType === TRANSACTION_TYPES.SALE) {
+      if (quantitySold <= 0) {
+        setFormError('الكمية المباعة يجب أن تكون أكبر من صفر.');
+        return;
+      }
+      const newTransaction = {
+        id: Date.now().toString(),
+        type: TRANSACTION_TYPES.SALE,
+        morningReading: parseFloat(morningReading),
+        eveningReading: parseFloat(eveningReading),
+        quantitySold,
+        pricePerUnit: FIXED_PRICE_PER_UNIT,
+        amount: totalAmount,
+        saleDate,
+        description: `مبيعات الغاز المسال - كمية: ${quantitySold.toFixed(2)}`,
+      };
+      setTransactions([newTransaction, ...transactions]);
+      setMorningReading('');
+      setEveningReading('');
+      setSaleDate(new Date().toISOString().substring(0, 10));
+    } else {
+      const amount = parseFloat(expenseAmount);
+      if (isNaN(amount) || amount <= 0) {
+        setFormError('أدخل مبلغ صحيح.');
+        return;
+      }
+      if (!expenseDescription.trim()) {
+        setFormError('أدخل وصف للمصروف.');
+        return;
+      }
+      const newTransaction = {
+        id: Date.now().toString(),
+        type: TRANSACTION_TYPES.EXPENSE,
+        amount: -amount,
+        description: expenseDescription.trim(),
+      };
+      setTransactions([newTransaction, ...transactions]);
+      setExpenseAmount('');
+      setExpenseDescription('');
+    }
+  };
 
-<BoxLink
-  title="Limitations"
-  description="EAS Build is new and rapidly evolving, so we recommend getting familiar with the current limitations."
-  href="/build-reference/limitations"
-  Icon={Cube01Icon}
-/>
+  const renderTransaction = ({ item }) => (
+    <View style={styles.transactionItem}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.transactionDesc}>
+            {item.type === TRANSACTION_TYPES.SALE ? '🟦 ' : '🟥 '}
+            {item.description}
+          </Text>
+          {item.type === TRANSACTION_TYPES.SALE && (
+            <Text style={styles.transactionSmall}>
+              تاريخ البيع: {item.saleDate} | ص/م: {item.morningReading} / {item.eveningReading} | كمية: {item.quantitySold}
+            </Text>
+          )}
+        </View>
+        <Text style={[styles.transactionAmount, { color: item.amount >= 0 ? 'green' : 'red' }]}>
+          {item.amount.toLocaleString()} {CURRENCY_NAME}
+        </Text>
+      </View>
+    </View>
+  );
+
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>{APP_TITLE}</Text>
+      <View style={styles.balanceCard}>
+        <Text style={styles.balanceText}>الرصيد الكلي: {totalBalance.toLocaleString()} {CURRENCY_NAME}</Text>
+      </View>
+
+      {/* Type Switch */}
+      <View style={styles.typeSwitch}>
+        <TouchableOpacity
+          style={[styles.typeButton, modalType === TRANSACTION_TYPES.SALE && styles.typeActive]}
+          onPress={() => setModalType(TRANSACTION_TYPES.SALE)}
+        >
+          <AntDesign name="pluscircle" size={20} color={modalType === TRANSACTION_TYPES.SALE ? 'white' : 'gray'} />
+          <Text style={[styles.typeButtonText, modalType === TRANSACTION_TYPES.SALE && { color: 'white' }]}>بيع</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.typeButton, modalType === TRANSACTION_TYPES.EXPENSE && styles.typeActive]}
+          onPress={() => setModalType(TRANSACTION_TYPES.EXPENSE)}
+        >
+          <AntDesign name="minuscircle" size={20} color={modalType === TRANSACTION_TYPES.EXPENSE ? 'white' : 'gray'} />
+          <Text style={[styles.typeButtonText, modalType === TRANSACTION_TYPES.EXPENSE && { color: 'white' }]}>مصروف</Text>
+        </TouchableOpacity>
+      </View>
+
+      {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
+
+      {modalType === TRANSACTION_TYPES.SALE ? (
+        <View style={styles.form}>
+          <TextInput
+            style={styles.input}
+            placeholder="تاريخ البيع (YYYY-MM-DD)"
+            value={saleDate}
+            onChangeText={setSaleDate}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="قراءة الصباح"
+            keyboardType="numeric"
+            value={morningReading}
+            onChangeText={setMorningReading}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="قراءة المساء"
+            keyboardType="numeric"
+            value={eveningReading}
+            onChangeText={setEveningReading}
+          />
+          <Text style={styles.infoText}>الكمية المباعة: {quantitySold.toFixed(2)}</Text>
+          <Text style={styles.infoText}>المبلغ الإجمالي: {totalAmount.toLocaleString()} {CURRENCY_NAME}</Text>
+        </View>
+      ) : (
+        <View style={styles.form}>
+          <TextInput
+            style={styles.input}
+            placeholder="مبلغ المصروف"
+            keyboardType="numeric"
+            value={expenseAmount}
+            onChangeText={setExpenseAmount}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="وصف المصروف"
+            value={expenseDescription}
+            onChangeText={setExpenseDescription}
+          />
+        </View>
+      )}
+
+      <TouchableOpacity style={styles.submitButton} onPress={handleAddTransaction}>
+        <Text style={styles.submitButtonText}>{modalType === TRANSACTION_TYPES.SALE ? 'تسجيل البيع' : 'تسجيل المصروف'}</Text>
+      </TouchableOpacity>
+
+      <FlatList
+        data={transactions}
+        renderItem={renderTransaction}
+        keyExtractor={(item) => item.id}
+        style={{ marginTop: 20 }}
+      />
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 10, backgroundColor: '#f0f0f0' },
+  title: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginVertical: 10 },
+  balanceCard: { backgroundColor: 'green', padding: 15, borderRadius: 10, marginVertical: 10 },
+  balanceText: { color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 18 },
+  typeSwitch: { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 10 },
+  typeButton: { flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: 'gray' },
+  typeActive: { backgroundColor: 'green', borderColor: 'green' },
+  typeButtonText: { marginLeft: 5 },
+  form: { backgroundColor: 'white', padding: 10, borderRadius: 10 },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 5, padding: 10, marginVertical: 5, textAlign: 'right' },
+  infoText: { fontSize: 16, fontWeight: 'bold', marginVertical: 2 },
+  submitButton: { backgroundColor: 'green', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  submitButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
+  errorText: { color: 'red', textAlign: 'center', marginVertical: 5 },
+  transactionItem: { backgroundColor: 'white', padding: 10, marginVertical: 5, borderRadius: 10 },
+  transactionDesc: { fontWeight: 'bold' },
+  transactionSmall: { fontSize: 12, color: 'gray' },
+  transactionAmount: { fontWeight: 'bold', fontSize: 16 },
+});
